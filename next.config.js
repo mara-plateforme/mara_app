@@ -6,14 +6,29 @@ const nextConfig = {
   output: process.env.NEXT_OUTPUT_MODE,
   experimental: {
     outputFileTracingRoot: path.join(__dirname, '../'),
+    serverComponentsExternalPackages: ['prisma']
+  },
+  webpack: (config, { isServer }) => {
+    if (!isServer) {
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        net: false,
+        tls: false,
+      };
+    }
+    return config;
   },
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
   typescript: {
     ignoreBuildErrors: false,
   },
-  images: { unoptimized: true },
+  images: {
+    unoptimized: false,
+    domains: ['localhost'],
+  },
 };
 
 module.exports = nextConfig;
