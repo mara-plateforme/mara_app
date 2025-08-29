@@ -1,1 +1,0 @@
-self.__REACT_LOADABLE_MANIFEST='{"components/particle-background.tsx -> ./particle-background-client":{"id":9510,"files":["static/chunks/510.311cbc7274148216.js"]}}';
