@@ -1,41 +1,53 @@
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
+import { z } from 'zod'
+import { prisma } from '@/lib/db'
+import { checkRateLimit, getClientIp, hasValidAdminKey } from '@/lib/api'
 
 export const dynamic = 'force-dynamic'
 
-const prisma = new PrismaClient()
+const contactSchema = z.object({
+  name: z.string().trim().min(2).max(150),
+  email: z.string().trim().email(),
+  subject: z.string().trim().min(2).max(200),
+  message: z.string().trim().min(10).max(4000),
+})
 
 export async function POST(req: NextRequest) {
   try {
+    const ip = getClientIp(req)
+    const rateLimit = checkRateLimit({
+      key: `contacts:post:${ip}`,
+      limit: 5,
+      windowMs: 60_000,
+    })
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { error: 'Trop de tentatives. Veuillez reessayer dans une minute.' },
+        { status: 429 }
+      )
+    }
+
     const body = await req.json()
-    
-    const { name, email, subject, message } = body
-
-    // Validation des champs requis
-    if (!name || !email || !subject || !message) {
+    const parsed = contactSchema.safeParse(body)
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: 'Tous les champs sont requis' },
+        {
+          error: 'Donnees invalides',
+          details: parsed.error.flatten(),
+        },
         { status: 400 }
       )
     }
 
-    // Validation de l'email
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: 'Adresse email invalide' },
-        { status: 400 }
-      )
-    }
+    const data = parsed.data
 
-    // Créer le message de contact
     const contact = await prisma.contact.create({
       data: {
-        name,
-        email,
-        subject,
-        message
+        name: data.name,
+        email: data.email,
+        subject: data.subject,
+        message: data.message,
       }
     })
 
@@ -51,13 +63,28 @@ export async function POST(req: NextRequest) {
       { error: 'Erreur serveur lors de l\'envoi' },
       { status: 500 }
     )
-  } finally {
-    await prisma.$disconnect()
   }
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    if (!hasValidAdminKey(req)) {
+      return NextResponse.json({ error: 'Acces non autorise' }, { status: 401 })
+    }
+
+    const ip = getClientIp(req)
+    const rateLimit = checkRateLimit({
+      key: `contacts:get:${ip}`,
+      limit: 30,
+      windowMs: 60_000,
+    })
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { error: 'Trop de requetes. Veuillez reessayer dans une minute.' },
+        { status: 429 }
+      )
+    }
+
     const contacts = await prisma.contact.findMany({
       orderBy: {
         createdAt: 'desc'
@@ -71,7 +98,5 @@ export async function GET() {
       { error: 'Erreur serveur' },
       { status: 500 }
     )
-  } finally {
-    await prisma.$disconnect()
   }
 }
